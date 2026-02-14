@@ -1,0 +1,16 @@
+# Core
+EbookLib==0.18
+BeautifulSoup4==4.12.2
+requests==2.31.0
+
+# IA e Processamento de Imagem
+Pillow==10.0.0
+rembg[gpu]==2.0.50
+onnxruntime-gpu
+websocket-client==1.6.1
+
+# Interface Grafica
+PyQt6==6.5.2
+
+# Banco de Dados e Utils
+langchain

@@ -1,0 +1,8 @@
+{
+  "app_name": "AutoNovel Studio",
+  "version": "1.0.0",
+  "paths": {
+    "temp": "./assets/temp",
+    "output": "./assets/projects"
+  }
+}
