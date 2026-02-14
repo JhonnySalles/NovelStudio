@@ -17,10 +17,16 @@ class EpubIngestor:
             "book_title": "",
             "chapters": []
         }
+                
+        # Controle de numeração
+        self.last_chapter_num = 0
+        self.sub_chapter_count = 0
         
         # Regex para identificar separadores visuais no texto (ex: ***, * * *, ---)
         self.separator_pattern = re.compile(r'^[\s\*\-\_\~•]{3,}$')
         self.url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+        self.html_garbage_pattern = re.compile(r'(html public|w3c|dtd xhtml|xmlns|xml version|doctype|encoding=).*', re.IGNORECASE)
+        self.number_extractor = re.compile(r'(\d+)')
 
     def load_book(self):
         try:
@@ -32,10 +38,37 @@ class EpubIngestor:
             print(f"❌ Erro ao ler EPUB: {e}")
             raise
 
+    def get_next_chapter_number(self, title):
+        """
+        Lógica de numeração incremental e inteligente.
+        Caso exista valor irá receber o mesmo do capítulo.
+        Caso não exista valor irá receber um incremental de capítulo: 1, 2, 3...
+        Caso exista valor anterior, mas o capitulo não tem, irá receber subnivel: 3.1, 3.2, 3.3...
+        """
+        match = self.number_extractor.search(title)
+        
+        if match:
+            num_found = int(match.group(1))
+            self.last_chapter_num = num_found
+            self.sub_chapter_count = 0
+            return str(num_found)
+        else:
+            if self.last_chapter_num == 0:
+                self.last_chapter_num = 1
+                return "1"
+            else:
+                self.sub_chapter_count += 1
+                return f"{self.last_chapter_num}.{self.sub_chapter_count}"    
+
     def clean_text(self, text):
-        if not text: return ""
+        if not text: 
+            return ""
         text = self.url_pattern.sub('', text)
-        return " ".join(text.split())
+        text = self.html_garbage_pattern.sub('', text)
+        clean = " ".join(text.split()).strip()
+        if clean.lower() in ["", "html", "xml", "content-type"]:
+            return ""
+        return clean
 
     def split_large_text(self, text, max_words=1500):
         """
@@ -80,6 +113,7 @@ class EpubIngestor:
         if header_tag:
             chapter_title = self.clean_text(header_tag.get_text())
 
+        chapter_num_label = self.get_next_chapter_number(chapter_title)
         scenes = []
         current_scene_text = []
 
@@ -87,50 +121,50 @@ class EpubIngestor:
         # Se não tiver body, pega tudo
         root = soup.body if soup.body else soup
 
-        for element in root.descendants:
-            if isinstance(element, NavigableString) and element.parent.name not in ['p', 'div', 'span']:
+        for element in root.find_all(['p', 'div', 'hr', 'h1', 'h2', 'h3']):
+            if element.name == 'hr':
+                if current_scene_text:
+                    full_text = " ".join(current_scene_text).strip()
+                    if full_text: scenes.append(full_text)
+                    current_scene_text = []
                 continue
 
-            if isinstance(element, Tag):
-                if element.name == 'hr':
-                    if current_scene_text:
-                        scenes.append(" ".join(current_scene_text))
-                        current_scene_text = []
-                    continue
-                
-                if element.name not in ['p', 'div']:
-                    continue
+            raw_text = element.get_text(strip=True)
+            clean_content = self.clean_text(raw_text)
 
-                raw_text = element.get_text(strip=True)
-                clean_content = self.clean_text(raw_text)
+            if not clean_content:
+                continue
 
-                if not clean_content:
-                    continue
-
-                if self.separator_pattern.match(clean_content):
-                    if current_scene_text:
-                        scenes.append(" ".join(current_scene_text))
-                        current_scene_text = []
-
-                else:
-                    if len(clean_content) > 3 and not clean_content.startswith(("{", "var ", "/*")):
-                        current_scene_text.append(clean_content)
+            if self.separator_pattern.match(clean_content):
+                if current_scene_text:
+                    full_text = " ".join(current_scene_text).strip()
+                    if full_text: scenes.append(full_text)
+                    current_scene_text = []
+            else:
+                if len(clean_content) > 2 and not clean_content.startswith(("{", "var ", "/*", "function(")):
+                    current_scene_text.append(clean_content)
 
         if current_scene_text:
-            scenes.append(" ".join(current_scene_text))
+            full_text = " ".join(current_scene_text).strip()
+            if full_text: scenes.append(full_text)
 
         final_scenes = []
-        for i, scene_text in enumerate(scenes):
+        for scene_text in scenes:
+            if scene_text.lower() == chapter_title.lower():
+                continue
+                
             chunks = self.split_large_text(scene_text, max_words=1500)
             for chunk in chunks:
-                final_scenes.append({
-                    "scene_id": len(final_scenes) + 1,
-                    "text": chunk
-                })
+                if chunk.strip():
+                    final_scenes.append({
+                        "scene_id": len(final_scenes) + 1,
+                        "text": chunk
+                    })
 
         if final_scenes:
             return {
                 "title": chapter_title,
+                "chapter": chapter_num_label,
                 "scenes": final_scenes
             }
         return None
