@@ -33,9 +33,15 @@ class ContentAnalyzer:
                 raise ValueError(error_msg)
 
     def save_json(self, data, output_path="book_structure.json"):
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-        print(f"💾 JSON estruturado salvo em: {output_path}")
+        """
+        Salva o resultado em JSON, garantindo que o arquivo anterior seja limpo.
+        """
+        try:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+            print(f"💾 Novo JSON estruturado salvo com sucesso em: {output_path}")
+        except Exception as e:
+            print(f"❌ Erro crítico ao salvar JSON: {e}")
 
 # --- MAIN GERAL ---
 if __name__ == "__main__":    
